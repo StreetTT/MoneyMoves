@@ -2,6 +2,7 @@ from os import getenv
 from requests import request
 from sys import exit
 from json import loads
+from datetime import datetime as dt
 
 
 def URLToDBID(url):
@@ -111,6 +112,7 @@ data = {
     "properties": {
         "Account": {"type": "relation", "relation": [{"id": Accounts[account]}]},
         "Amount": {"type": "number", "number": amount},
+        'Date': {'type': 'date', "date": {"start": (dt.now()).isoformat()}},
         "Name": {
             "type": "title",
             "title": [{"type": "text", "text": {"content": reason}}],
