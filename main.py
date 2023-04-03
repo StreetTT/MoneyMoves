@@ -97,7 +97,7 @@ while amount < 0:
     print("How much was this transaction?")
     amount = input()
     try:
-        amount = int(amount)
+        amount = float(amount)
         if amount < 0:
             print("Transaction must be more than 0")
     except ValueError:
