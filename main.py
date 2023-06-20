@@ -81,66 +81,12 @@ class MoneyMove:
             selection = -1
 
     def __NotionURLToID(self, url: str):
-        self.__URL = self.__NotionURLToID(url)
-        self.__RetriveFromNotion()
-        self.MainMenu()
-
-    def GetURL(self):
-        return self.__URL
-
-    def GetTransactionsDBID(self):
-        return self.__TransactionsDBID
-
-    def GetAccount(self, index: int=-1):
-        if index != -1:
-            return self.__Accounts[index]
-        return self.__Accounts
-
-    def AppendAccount(self, account: Account):
-        self.__Accounts.append(account)
-
-    def MainMenu(self):
-        selection = -1
-        print("Welcome to Money Moves!", end=" ")
-        while selection == -1:
-            print("""Select an Option: 
-            1) View Balance
-            2) Make Transaction
-            3) Quit""")
-            selection = input()
-            try:
-                selection = int(selection)
-                if selection not in [1, 2, 3]:
-                    selection = -1
-                    print("Pick a valid choice")
-            except ValueError:
-                selection = -1
-                print("Pick a valid choice")
-            if selection == 1:
-                print("Account Balance")
-                for account in self.__Accounts:
-                    print(str(account))
-            elif selection == 2:
-                again = "Y"
-                while again == "Y":
-                    Transaction(self)
-                    again = input(
-                        "Enter 'Y' to enter another Transaction: ").upper()
-            elif selection == 3:
-                print("Thank You")
-                exit()
-            selection = -1
-
-    def __NotionURLToID(self, url: str):
         parts = url.split('/')
         if len(parts) >= 2:
             return parts[-1].split('-')[-1].split('?')[0]
         else:
             print("No URL Entered")
             exit()
-
-    def __RetriveFromNotion(self):
-        # Takes the information from notion and parse's it into the classes
 
     def __RetriveFromNotion(self):
         # Takes the information from notion and parse's it into the classes
@@ -192,7 +138,7 @@ class MoneyMove:
             )["property_item"]["rollup"]["number"]
             self.AppendAccount(
                 Account(record["properties"]["Name"]["title"][0]["plain_text"],
-                        record["id"], round(balance, 2), round(balance, 2), roundUp, when, to))
+                        record["id"], round(balance, 2), roundUp, when, to))
         for account in self.__Accounts:
             if account.GetRoundUp():
                 account._SetRoundUp(self.__FindAccount(account.GetRoundUp()))
@@ -235,6 +181,21 @@ class Account:
     def GetTunnel(self):
         return self.__Tunnel
 
+    def _SetRoundUp(self, roundUp):
+        self.__RoundUp = roundUp
+
+    def _SetTunnelTo(self, tunnelTo):
+        self.__Tunnel["To"] = tunnelTo
+
+    def GetAmount(self):
+        return self.__Amount
+
+    def __str__(self):
+        return self.__Name + ": £" + format(self.__Amount, '.2f')
+
+    def ApplyTransaction(self, amount: int):
+        self.__Amount += amount
+
 
 class Transaction:
 
@@ -276,7 +237,7 @@ class Transaction:
                 },
                 'Amount': {
                     'type': 'number',
-                    'number': amount
+                    'number': -self.Amount
                 },
                 'Date': {
                     'type': 'date',
@@ -314,7 +275,7 @@ class Transaction:
                 },
                 'Amount': {
                     'type': 'number',
-                    'number': (int(abs(self.Amount)) + 1) - abs(self.Amount)
+                    'number': self.Amount + self.RealAmount
                 },
                 'Date': {
                     'type': 'date',
@@ -423,7 +384,8 @@ class Transaction:
                 self.RealAmount = -1
                 print("Pick a valid choice")
         if self.ExpenseType == "Expense":
-            self.Amount = -self.Amount
+            self.RealAmount = -self.RealAmount
+        print()
 
     def GetReason(self):
         print("Sumarise this transaction")
@@ -431,8 +393,4 @@ class Transaction:
         print()
 
 
-CurrentMM = MoneyMove(getenv("landingurl"))
-again = "Y"
-while again == "Y":
-    Transaction(CurrentMM)
-    again = input("Make another Transaction (Y/N): ").upper()
+MoneyMove(getenv("testlandingurl"))
