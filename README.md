@@ -51,5 +51,5 @@ Tunnels:
 - This connects to accounts together, so that expenses/incomes from one account are payed in to/taken from the linked account.
 - To determine if this happens when money is payed in/out of the account, select a drop down option in the `Tunnel When` column
 - The linked account the money is payed in/out to should be entered into the `Tunnel To` column
-- Leave either the `Tunnel When` column or the `Tunnel To` column to disable the feature for the account
+- Leave **either** the `Tunnel When` column or the `Tunnel To` column to disable the feature for the account
 

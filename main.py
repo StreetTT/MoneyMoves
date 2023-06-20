@@ -5,7 +5,7 @@ from json import loads
 from datetime import datetime as dt
 
 
-def MakeRequest(method: str, url: str, message: str, data: dict=None): 
+def MakeRequest(method: str, url: str, message: str, data: dict = None):
     if data is None:
         res = request(method=method, url=url, headers=HEADERS)
     else:
@@ -30,6 +30,57 @@ class MoneyMove:
 
     def __init__(self, url: str):
         self.__Accounts = []
+        self.__URL = self.__NotionURLToID(url)
+        self.__RetriveFromNotion()
+        self.MainMenu()
+
+    def GetURL(self):
+        return self.__URL
+
+    def GetTransactionsDBID(self):
+        return self.__TransactionsDBID
+
+    def GetAccount(self, index: int = -1):
+        if index != -1:
+            return self.__Accounts[index]
+        return self.__Accounts
+
+    def AppendAccount(self, account):
+        self.__Accounts.append(account)
+
+    def MainMenu(self):
+        selection = -1
+        print("Welcome to Money Moves!", end=" ")
+        while selection == -1:
+            print("""Select an Option: 
+            1) View Balance
+            2) Make Transaction
+            3) Quit""")
+            selection = input()
+            try:
+                selection = int(selection)
+                if selection not in [1, 2, 3]:
+                    selection = -1
+                    print("Pick a valid choice")
+            except ValueError:
+                selection = -1
+                print("Pick a valid choice")
+            if selection == 1:
+                print("Account Balance")
+                for account in self.__Accounts:
+                    print(str(account))
+            elif selection == 2:
+                again = "Y"
+                while again == "Y":
+                    Transaction(self)
+                    again = input(
+                        "Enter 'Y' to enter another Transaction: ").upper()
+            elif selection == 3:
+                print("Thank You")
+                exit()
+            selection = -1
+
+    def __NotionURLToID(self, url: str):
         self.__URL = self.__NotionURLToID(url)
         self.__RetriveFromNotion()
         self.MainMenu()
@@ -90,6 +141,9 @@ class MoneyMove:
 
     def __RetriveFromNotion(self):
         # Takes the information from notion and parse's it into the classes
+
+    def __RetriveFromNotion(self):
+        # Takes the information from notion and parse's it into the classes
         LandingPageChildren = MakeRequest(
             "GET", f"https://api.notion.com/v1/blocks/{self.__URL}/children",
             "Landing Page Children")["results"]
@@ -121,6 +175,11 @@ class MoneyMove:
                 when = False
             else:
                 when = when["name"]
+            roundUp = record["properties"]["Round Up To"]["relation"]
+            if len(roundUp) == 1:
+                roundUp = roundUp[0]["id"]
+            else:
+                roundUp = False
             to = record["properties"]["Tunnel To"]["relation"]
             if len(to) == 1:
                 to = to[0]["id"]
@@ -133,7 +192,12 @@ class MoneyMove:
             )["property_item"]["rollup"]["number"]
             self.AppendAccount(
                 Account(record["properties"]["Name"]["title"][0]["plain_text"],
-                        record["id"], round(balance, 2), roundUp, when, to))
+                        record["id"], round(balance, 2), round(balance, 2), roundUp, when, to))
+        for account in self.__Accounts:
+            if account.GetRoundUp():
+                account._SetRoundUp(self.__FindAccount(account.GetRoundUp()))
+            if account.GetTunnel():
+                account._SetTunnelTo(self.__FindAccount(account.GetTunnel()["To"]))
 
     def __FindAccount(self, iD: str):
         for account in self.__Accounts:
@@ -170,15 +234,6 @@ class Account:
 
     def GetTunnel(self):
         return self.__Tunnel
-
-    def GetAmount(self):
-        return self.__Amount
-
-    def __str__(self):
-        return self.__Name + ": £" + format(self.__Amount, '.2f')
-
-    def ApplyTransaction(self, amount: int):
-        self.__Amount += amount
 
 
 class Transaction:
@@ -221,12 +276,12 @@ class Transaction:
                 },
                 'Amount': {
                     'type': 'number',
-                    'number': self.Amount
+                    'number': amount
                 },
                 'Date': {
                     'type': 'date',
                     "date": {
-                        "start": (dt.now()).isoformat()
+                        "start": dt.today().isoformat()[:10]
                     }
                 },
                 'Name': {
@@ -259,12 +314,12 @@ class Transaction:
                 },
                 'Amount': {
                     'type': 'number',
-                    'number': self.Amount - abs(self.RealAmount)
+                    'number': (int(abs(self.Amount)) + 1) - abs(self.Amount)
                 },
                 'Date': {
                     'type': 'date',
                     "date": {
-                        "start": (dt.now()).isoformat()
+                        "start": dt.today().isoformat()[:10]
                     }
                 },
                 'Name': {
@@ -303,7 +358,7 @@ class Transaction:
                 'Date': {
                     'type': 'date',
                     "date": {
-                        "start": (dt.now()).isoformat()
+                        "start": dt.today().isoformat()[:10]
                     }
                 },
                 'Name': {
@@ -368,7 +423,7 @@ class Transaction:
                 self.RealAmount = -1
                 print("Pick a valid choice")
         if self.ExpenseType == "Expense":
-            self.RealAmount = -self.RealAmount
+            self.Amount = -self.Amount
 
     def GetReason(self):
         print("Sumarise this transaction")
@@ -376,4 +431,8 @@ class Transaction:
         print()
 
 
-MoneyMove(getenv("landingurl"))
+CurrentMM = MoneyMove(getenv("landingurl"))
+again = "Y"
+while again == "Y":
+    Transaction(CurrentMM)
+    again = input("Make another Transaction (Y/N): ").upper()
