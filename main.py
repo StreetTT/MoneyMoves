@@ -5,7 +5,7 @@ from json import loads
 from datetime import datetime as dt
 
 
-def MakeRequest(method, url, message, data=None):
+def MakeRequest(method: str, url: str, message: str, data: dict = None):
     if data is None:
         res = request(method=method, url=url, headers=HEADERS)
     else:
@@ -30,12 +30,66 @@ class MoneyMove:
 
     def __init__(self, url: str):
         self.__Accounts = []
+        self.__URL = self.__NotionURLToID(url)
+        self.__RetriveFromNotion()
+        self.MainMenu()
+
+    def GetURL(self):
+        return self.__URL
+
+    def GetTransactionsDBID(self):
+        return self.__TransactionsDBID
+
+    def GetAccount(self, index: int = -1):
+        if index != -1:
+            return self.__Accounts[index]
+        return self.__Accounts
+
+    def AppendAccount(self, account):
+        self.__Accounts.append(account)
+
+    def MainMenu(self):
+        selection = -1
+        print("Welcome to Money Moves!", end=" ")
+        while selection == -1:
+            print("""Select an Option: 
+            1) View Balance
+            2) Make Transaction
+            3) Quit""")
+            selection = input()
+            try:
+                selection = int(selection)
+                if selection not in [1, 2, 3]:
+                    selection = -1
+                    print("Pick a valid choice")
+            except ValueError:
+                selection = -1
+                print("Pick a valid choice")
+            if selection == 1:
+                print("Account Balance")
+                for account in self.__Accounts:
+                    print(str(account))
+            elif selection == 2:
+                again = "Y"
+                while again == "Y":
+                    Transaction(self)
+                    again = input(
+                        "Enter 'Y' to enter another Transaction: ").upper()
+            elif selection == 3:
+                print("Thank You")
+                exit()
+            selection = -1
+
+    def __NotionURLToID(self, url: str):
         parts = url.split('/')
         if len(parts) >= 2:
-            self.__URL = parts[-1].split('-')[-1].split('?')[0]
+            return parts[-1].split('-')[-1].split('?')[0]
         else:
             print("No URL Entered")
             exit()
+
+    def __RetriveFromNotion(self):
+        # Takes the information from notion and parse's it into the classes
         LandingPageChildren = MakeRequest(
             "GET", f"https://api.notion.com/v1/blocks/{self.__URL}/children",
             "Landing Page Children")["results"]
@@ -59,7 +113,7 @@ class MoneyMove:
         for record in AccountDatabaseData:
             roundUp = record["properties"]["Round Up To"]["relation"]
             if len(roundUp) == 1:
-                roundUp = roundUp[0]["id"]
+                roundUp = self.__FindAccount(roundUp[0]["id"])
             else:
                 roundUp = False
             when = record["properties"]["Tunnel When"]["select"]
@@ -67,28 +121,34 @@ class MoneyMove:
                 when = False
             else:
                 when = when["name"]
+            roundUp = record["properties"]["Round Up To"]["relation"]
+            if len(roundUp) == 1:
+                roundUp = roundUp[0]["id"]
+            else:
+                roundUp = False
             to = record["properties"]["Tunnel To"]["relation"]
             if len(to) == 1:
                 to = to[0]["id"]
             else:
                 to = False
+            balance = MakeRequest(
+                "Get",
+                f'https://api.notion.com/v1/pages/{record["id"]}/properties/{record["properties"]["Total"]["id"]}',
+                f'{record["properties"]["Name"]["title"][0]["plain_text"]} Balance'
+            )["property_item"]["rollup"]["number"]
             self.AppendAccount(
                 Account(record["properties"]["Name"]["title"][0]["plain_text"],
-                        record["id"], roundUp, when, to))
+                        record["id"], round(balance, 2), roundUp, when, to))
+        for account in self.__Accounts:
+            if account.GetRoundUp():
+                account._SetRoundUp(self.__FindAccount(account.GetRoundUp()))
+            if account.GetTunnel():
+                account._SetTunnelTo(self.__FindAccount(account.GetTunnel()["To"]))
 
-    def GetURL(self):
-        return self.__URL
-
-    def GetTransactionsDBID(self):
-        return self.__TransactionsDBID
-
-    def GetAccount(self, index=-1):
-        if index != -1:
-            return self.__Accounts[index]
-        return self.__Accounts
-
-    def AppendAccount(self, account):
-        self.__Accounts.append(account)
+    def __FindAccount(self, iD: str):
+        for account in self.__Accounts:
+            if iD == account.GetID():
+                return account
 
 
 class Account:
@@ -96,10 +156,12 @@ class Account:
     def __init__(self,
                  name: str,
                  iD: str,
+                 amount: int,
                  roundUp: bool = False,
                  when: str = False,
                  to: str = False):
         self.__Name = name
+        self.__Amount = amount
         self.__ID = iD
         self.__RoundUp = roundUp
         if not (when or to):
@@ -119,6 +181,21 @@ class Account:
     def GetTunnel(self):
         return self.__Tunnel
 
+    def _SetRoundUp(self, roundUp):
+        self.__RoundUp = roundUp
+
+    def _SetTunnelTo(self, tunnelTo):
+        self.__Tunnel["To"] = tunnelTo
+
+    def GetAmount(self):
+        return self.__Amount
+
+    def __str__(self):
+        return self.__Name + ": £" + format(self.__Amount, '.2f')
+
+    def ApplyTransaction(self, amount: int):
+        self.__Amount += amount
+
 
 class Transaction:
 
@@ -128,16 +205,24 @@ class Transaction:
         self.GetAccount()
         self.ExpenseType = -1
         self.GetExpenseType()
-        self.Amount = -1
+        self.RealAmount = -1
         self.GetAmount()
+        self.Amount = self.RealAmount
         self.Reason = None
         self.GetReason()
+        self.__DetermineType()
+
+    def __DetermineType(self):
+        if self.Account.GetRoundUp() and self.ExpenseType == "Expense":
+            self.Amount = (int(abs(self.RealAmount)) + 1)
         self.__MakeTransaction()
+        if self.Account.GetRoundUp() and self.ExpenseType == "Expense":
+            self.__MakeRoundUpTransaction()
+        if self.Account.GetTunnel(
+        ) and self.ExpenseType == self.Account.GetTunnel()["When"]:
+            self.__MakeTunnelTransaction()
 
     def __MakeTransaction(self):
-        amount = self.Amount
-        if self.Account.GetRoundUp() and self.ExpenseType == "Expense":
-            amount = (int(abs(self.Amount)) + 1)
         data = {
             'parent': {
                 'type': 'database_id',
@@ -152,12 +237,12 @@ class Transaction:
                 },
                 'Amount': {
                     'type': 'number',
-                    'number': amount
+                    'number': -self.Amount
                 },
                 'Date': {
                     'type': 'date',
                     "date": {
-                        "start": (dt.now()).isoformat()
+                        "start": dt.today().isoformat()[:10]
                     }
                 },
                 'Name': {
@@ -173,11 +258,7 @@ class Transaction:
         }
         MakeRequest("POST", "https://api.notion.com/v1/pages",
                     "New Transaction", data)
-        if self.Account.GetRoundUp() and self.ExpenseType == "Expense":
-            self.__MakeRoundUpTransaction()
-        if self.Account.GetTunnel(
-        ) and self.ExpenseType == self.Account.GetTunnel()["When"]:
-            self.__MakeTunnelTransaction()
+        self.Account.ApplyTransaction(self.Amount)
 
     def __MakeRoundUpTransaction(self):
         data = {
@@ -189,17 +270,17 @@ class Transaction:
                 'Account': {
                     'type': 'relation',
                     'relation': [{
-                        'id': self.Account.GetRoundUp()
+                        'id': self.Account.GetRoundUp().GetID()
                     }]
                 },
                 'Amount': {
                     'type': 'number',
-                    'number': (int(abs(self.Amount)) + 1) - abs(self.Amount)
+                    'number': self.Amount + self.RealAmount
                 },
                 'Date': {
                     'type': 'date',
                     "date": {
-                        "start": (dt.now()).isoformat()
+                        "start": dt.today().isoformat()[:10]
                     }
                 },
                 'Name': {
@@ -215,6 +296,8 @@ class Transaction:
         }
         MakeRequest("POST", "https://api.notion.com/v1/pages",
                     "Round Up Transaction", data)
+        self.Account.GetRoundUp().ApplyTransaction(self.Amount -
+                                                   abs(self.RealAmount))
 
     def __MakeTunnelTransaction(self):
         data = {
@@ -226,17 +309,17 @@ class Transaction:
                 'Account': {
                     'type': 'relation',
                     'relation': [{
-                        'id': self.Account.GetTunnel()["To"]
+                        'id': self.Account.GetTunnel()["To"].GetID()
                     }]
                 },
                 'Amount': {
                     'type': 'number',
-                    'number': -self.Amount
+                    'number': -self.RealAmount
                 },
                 'Date': {
                     'type': 'date',
                     "date": {
-                        "start": (dt.now()).isoformat()
+                        "start": dt.today().isoformat()[:10]
                     }
                 },
                 'Name': {
@@ -252,6 +335,8 @@ class Transaction:
         }
         MakeRequest("POST", "https://api.notion.com/v1/pages",
                     "Tunnel Transaction", data)
+        self.Account.GetTunnel()["To"].ApplyTransaction(self.Amount -
+                                                        abs(self.RealAmount))
 
     def GetAccount(self):
         while self.Account == -1:
@@ -288,26 +373,24 @@ class Transaction:
         self.ExpenseType = TYPE[self.ExpenseType - 1]
 
     def GetAmount(self):
-        while self.Amount < 0:
+        while self.RealAmount < 0:
             print("How much was this transaction?")
-            self.Amount = input()
+            self.RealAmount = input()
             try:
-                self.Amount = float(self.Amount)
-                if self.Amount < 0:
+                self.RealAmount = float(self.RealAmount)
+                if self.RealAmount < 0:
                     print("Transaction must be more than 0")
             except ValueError:
-                self.Amount = -1
+                self.RealAmount = -1
                 print("Pick a valid choice")
         if self.ExpenseType == "Expense":
-            self.Amount = -self.Amount
+            self.RealAmount = -self.RealAmount
+        print()
 
     def GetReason(self):
         print("Sumarise this transaction")
         self.Reason = input()
+        print()
 
 
-CurrentMM = MoneyMove(getenv("landingurl"))
-again = "Y"
-while again == "Y":
-    Transaction(CurrentMM)
-    again = input("Make another Transaction (Y/N): ").upper()
+MoneyMove(getenv("testlandingurl"))
